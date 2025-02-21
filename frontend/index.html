@@ -1,15 +1,55 @@
-<!DOOCTYPE <html>
-	<html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 	<head>
-		<title>Login</title>
-		<script src="app.js">
-		</script>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale-1.0">
+		<title>Session Hijacking Protection</title>
+		<link rel="stylesheet" href="style.css">
 	</head>
 	<body>
-		<form action="http://127.0.0.1:3000/login" method="POST">
-			Username: <input type="text" name="username"><br>
-			Password: <input type="password" name="password"><br>
-			<input type="submit" value="login">
-		</form>
+		<h1>Session Hijacking Protection</h1>
+		<div class="info-box">
+			<p><strong>Session Hijacking Prevention Features</strong></p>
+			<ul>
+			<li>IP Address binding: Your session is bound to your IP address</li>
+			<li>User Agent Verification: Your browser signature is verified on each request</li>
+			<li>Secure cookies: HTTP-only, Secure flags, and SameSite=Strict</li>
+			<li>Session timeout: Automatic expiration after period of inactivity</li>
+			</ul>
+		</div>
+
+		<div class="container">
+			<h2>Login</h2>
+			<form id="loginForm">
+				<div>
+					<label for="username">Username:</label>
+					<input type="text" id="username" name="username" value="user">
+				</div>
+				<div>
+					<label for="password">Password:</label>
+					<input type="password" id="password" name="password" value="password">
+				</div>
+				<button type="submit" class="button">Login</button>
+			</form>
+			<div id="loginResult" class="result"></div>
+		</div>
+
+		<div class="container">
+			<h2>Logout</h2>
+			<button id="logoutButton" class="button" disabled>Logout</button>
+			<div id="logoutResult" class="result"></div>
+		</div>
+
+		<div class="container">
+			<h2>Simulate Session Hijacking Attempts</h2>
+			<p>These buttons simulate what happens when an attacker tries to hijacking your session</p>
+			<button id="simulateIpChange" class="button" disabled>Simulate IP Change</button>
+			<button id="simulateUserAgentChange" class="button" disabled>Simulate User Agent Change</button>
+			<div id="simulationResult" class="result"></div>
+		</div>
+
+		<script src="app.js">	
+		</script>
 	</body>
 </html>
+
