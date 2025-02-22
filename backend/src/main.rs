@@ -1,10 +1,7 @@
 use actix_web::cookie::time::Duration;
-use actix_web::{web, App, HttpServer, HttpResponse, Responder};
-use actix_identity::{CookieIdentityPolicy, IdentityService};
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_identity::{CookieIdentityPolicy, IdentityExt, IdentityService};
 use actix_session::{Session, CookieSession};
-use rand::seq::index;
-use std::time::Duration;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use chrono::Utc;
@@ -34,11 +31,21 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(session_store.clone()))
             .app_data(web::Data::new(csrf_store.clone()))
-            .warp(IdentifyService::new(
-                    CookieIdentityPolicy::new(&[0; 32]).name("auth-cookie").secure(true).http_only(true).same_site(actix_web::cookie::SameSite::Strict).max_age(Duration::from_secs(3600))
+            //Set up secure cookie policy
+            .warp(IdentityService::new(CookieIdentityPolicy::new(&[0;32])
+                    .name("auth-cookie")
+                    .secure(true)
+                    .http_only(true)
+                    .same_site(actix_web::cookie::SameSite::Strict)
+                    .max_age(Duration::from_secs(3600))
             ))
-            .warp(CookieSession::signed(&[0; 32]).secure(true).http_only(true).name("session").max_age(3600)
-                )
+            //Session middleware
+            .warp(CookieSession::signed(&[0;32])
+                .secure(true)
+                .http_only(true)
+                .name("session")
+                .max_age(3600)
+            )
             ///Routes
             .service(web::resource("/login").route(web::post().to(login)))
             .service(web::resource("/logout").route(web::post().to(logout)))
@@ -52,13 +59,13 @@ async fn main() -> std::io::Result<()> {
 }
    
 async fn index() -> impl Responder {
-    HttpResponse::Ok().body(include_str!("../static/index.html"))
+    HttpResponse::Ok().body(include_str!("../frontend/index.html"))
 }
 
 async fn login(
     req: web::Json<LoginRequest>,
     session: Session,
-    session_store: web:Data<Arc<Mutex<SessionStore>>>,
+    session_store: web::Data<Arc<Mutex<SessionStore>>>,
     request: actix_web::HttpRequest,
 ) ->impl Responder {
     // Simple Hardcore authentication
@@ -85,7 +92,7 @@ async fn login(
         };
 
         //STORE Session
-        session_store.lock().unwrap().add_session(session_id.clone()),
+        session_store.lock().unwrap().add_session(session_id.clone());
         // SET Cookie
         session.insert("session_id", session_id.clone()).unwrap();
 
@@ -154,7 +161,7 @@ async fn protected_resource(
     };
 
     let ip = request.connection_info().peer_addr()
-        .and_then(|addr| addr.split(:).next())
+        .and_then(|addr| addr.split(':').next())
         .and_then(|ip| IpAddr::from_str(ip).ok())
         .unwrap_or_else(|| IpAddr::from_str("0.0.0.0").unwrap());
 
@@ -223,5 +230,15 @@ async fn protected_resource(
     }
 }
 
-async fn get_csrf_token() -> impl Responder {
+async fn get_csrf_token(
+    session: Session,
+    csrf_store: web::Data<Arc<Mutex<CsrfStore,>>>
+) -> impl Responder {
+    let user_id = session.get::<String>("session_id").ok().flatten();
+
+    //Generate new CSRF token
+    let token = csrf_store.lock().unwrap().generate_token(user_id);
+    HttpResponse::Ok().json(serde_json::json!({
+        "csrf_token": token
+    }))
 }
