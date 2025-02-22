@@ -1,5 +1,3 @@
-use actix_session::storage::SessionStore;
-use actix_web::cookie::time::Duration;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
