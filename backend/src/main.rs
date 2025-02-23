@@ -1,7 +1,9 @@
-use actix_web::cookie::time::Duration;
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use actix_identity::{CookieIdentityPolicy, IdentityExt, IdentityService};
 use actix_session::{Session, CookieSession};
+use std::time::Duration;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use chrono::Utc;
