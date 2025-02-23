@@ -1,8 +1,9 @@
 # SessionHijack
 
 A high-performance session hijacking detection and prevention system implemented in Rust. This tool leverages Rust's memory safety and zero-cost abstractions to provide real-time monitoring and protection against various session hijacking attacks.
-Features
 
+---
+### Features
 Zero-cost session token validation
 Async network traffic monitoring
 Memory-safe implementation
