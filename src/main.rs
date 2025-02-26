@@ -10,8 +10,8 @@ use chrono::Utc;
 use std::net::IpAddr;
 use std::str::FromStr;
 
-mod session_protection;
-mod csrf_protection;
+pub use services::session_protection;
+pub use middleware::csrf_protection;
 use session_protection::{
     SessionData, 
     SessionStore, 
@@ -244,3 +244,4 @@ async fn get_csrf_token(
         "csrf_token": token
     }))
 }
+
