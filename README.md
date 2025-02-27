@@ -29,7 +29,7 @@ Installation
 
 Clone the repository:
 
-bashCopygit clone https://github.com/yourusername/rust-session-hijacking.git
+bashCopygit clone https://github.com/deep60/rust-session-hijacking.git
 cd rust-session-hijacking
 
 Build the project:

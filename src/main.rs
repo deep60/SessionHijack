@@ -57,7 +57,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn index() -> impl Responder {
-    HttpResponse::Ok().body(include_str!("../frontend/index.html"))
+    HttpResponse::Ok().body(include_str!("../frontend/src/index.html"))
 }
 
 async fn login(
