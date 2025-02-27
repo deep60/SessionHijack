@@ -1,3 +1,5 @@
+use thiserror::Error;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Invalid session")]
