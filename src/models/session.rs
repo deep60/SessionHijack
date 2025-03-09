@@ -28,8 +28,8 @@ impl Session {
         device_fingerprint: &str,
         csrf_token: &str,
         expiry: DateTime<Utc>,
-    ) -> Result<Self, sqls::Error> {
-        let session = self {
+    ) -> Result<Self, sqlx::Error> {
+        let session = Session {
             id: Uuid::new_v4(),
             user_id,
             token: Uuid::new_v4().to_string(),
@@ -75,7 +75,7 @@ impl Session {
             "#,
             token
         )
-        .fetch_options(pool)
+        .fetch_optional(pool)
         .await
     }
 
