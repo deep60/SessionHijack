@@ -2,6 +2,12 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use sqlx::PgPool;
+use crate::{
+    models::user::User,
+    error::Error,
+    config::SecurityConfig,
+};
 
 pub struct AuthService {
     pool: PgPool,

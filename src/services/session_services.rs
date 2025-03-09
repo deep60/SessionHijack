@@ -1,3 +1,15 @@
+use std::sync::{Arc, Mutex};
+use actix_web::HttpRequest;
+use chrono::Utc;
+use uuid::Uuid;
+use sha2::{Sha256, Digest};
+use crate::{
+    models::{user::User, session::Session},
+    error::Error,
+    config::SecurityConfig,
+    services::session_protection::{SessionStore, SessionProtection},
+};
+
 pub struct SessionService {
     store: Arc<Mutex<SessionStore>>,
     config: SecurityConfig,
@@ -15,81 +27,74 @@ impl SessionService {
     ) -> Result<Session, Error> {
         let ip = self.extract_ip_address(request)?;
         let user_agent = self.extract_user_agent(request)?;
-        let fingerprint = self.generate_device_fingerprint(request);
+        let device_fingerprint = self.generate_device_fingerprint(request);
 
-        // Check for existing sessions
-        self.enforce_session_limits(user.id.clone())?;
+        self.enforce_session_limits(user.id)?;
 
         let session = Session {
-            id: Uuid::new_v4().to_string(),
-            user_id: user.id.clone(),
+            id: Uuid::new_v4(),
+            user_id: user.id,
+            token: Uuid::new_v4().to_string(),
             ip_address: ip,
             user_agent,
+            device_fingerprint,
+            csrf_token: self.generate_csrf_token(),
             created_at: Utc::now(),
             last_activity: Utc::now(),
-            csrf_token: self.generate_csrf_token(),
+            expires_at: Utc::now() + self.config.session_timeout,
             is_valid: true,
-            device_fingerprint: fingerprint,
         };
 
-        self.store.lock().unwrap().add_session(session.clone());
         Ok(session)
     }
 
     fn generate_device_fingerprint(&self, request: &HttpRequest) -> String {
-        // Combine multiple factors for a more reliable fingerprint
-        let ip = request.connection_info().peer_addr().unwrap_or("unknown");
-        let user_agent = request
-            .headers()
-            .get("User-Agent")
-            .map(|h| h.to_str().unwrap_or(""))
-            .unwrap_or("");
-        let accept_lang = request
-            .headers()
-            .get("Accept-Language")
-            .map(|h| h.to_str().unwrap_or(""))
-            .unwrap_or("");
+        let mut fingerprint = String::new();
+        
+        if let Some(ip) = request.connection_info().realip_remote_addr() {
+            fingerprint.push_str(ip);
+        }
+        
+        if let Some(ua) = request.headers().get("User-Agent") {
+            if let Ok(ua_str) = ua.to_str() {
+                fingerprint.push_str(ua_str);
+            }
+        }
 
-        let fingerprint = format!("{}:{}:{}", ip, user_agent, accept_lang);
-        sha256::hash(fingerprint.as_bytes())
+        let mut hasher = Sha256::new();
+        hasher.update(fingerprint.as_bytes());
+        format!("{:x}", hasher.finalize())
     }
 
-    pub fn validate_session(
-        &self,
-        session_id: &str,
-        request: &HttpRequest,
-    ) -> Result<Session, Error> {
-        let store = self.store.lock().unwrap();
-        let session = store.get_session(session_id)?;
+    fn extract_ip_address(&self, request: &HttpRequest) -> Result<std::net::IpAddr, Error> {
+        request
+            .connection_info()
+            .realip_remote_addr()
+            .and_then(|ip| ip.parse().ok())
+            .ok_or(Error::InvalidIPAddress)
+    }
 
-        // Validate session
-        if !session.is_valid {
-            return Err(Error::InvalidSession);
-        }
+    fn extract_user_agent(&self, request: &HttpRequest) -> Result<String, Error> {
+        request
+            .headers()
+            .get("User-Agent")
+            .and_then(|ua| ua.to_str().ok())
+            .map(|s| s.to_string())
+            .ok_or(Error::InvalidUserAgent)
+    }
 
-        // Check expiration
-        if self.is_session_expired(&session) {
-            return Err(Error::SessionExpired);
-        }
+    fn generate_csrf_token(&self) -> String {
+        Uuid::new_v4().to_string()
+    }
 
-        // Validate IP
-        let current_ip = self.extract_ip_address(request)?;
-        if session.ip_address != current_ip {
-            return Err(Error::IPMismatch);
-        }
+    async fn enforce_session_limits(&self, user_id: Uuid) -> Result<(), Error> {
+        // Implementation for session limits
+        Ok(())
+    }
+}
 
-        // Validate User-Agent
-        let current_ua = self.extract_user_agent(request)?;
-        if session.user_agent != current_ua {
-            return Err(Error::UserAgentMismatch);
-        }
-
-        // Validate device fingerprint
-        let current_fingerprint = self.generate_device_fingerprint(request);
-        if session.device_fingerprint != current_fingerprint {
-            return Err(Error::DeviceFingerprintMismatch);
-        }
-
-        Ok(session)
+impl SessionProtection for SessionService {
+    fn is_session_expired(&self, session: &Session) -> bool {
+        Utc::now() > session.expires_at
     }
 }
