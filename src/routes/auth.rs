@@ -1,4 +1,4 @@
-use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use actix_web::{web, HttpRequest, HttpResponse, Responder, dev::ServiceRequest};
 use serde_json::json;
 use crate::{
     services::{
@@ -8,25 +8,61 @@ use crate::{
     },
     error::Error,
 };
+use actix_session::Session;
+use crate::{
+    models::user::User,
+    error::Error as AppError,
+};
+
+#[derive(serde::Deserialize)]
+pub struct AuthLoginRequest {
+    username: String,
+    password: String,
+}
 
 pub async fn login(
-    req: web::Json<LoginRequest>,
-    auth_service: web::Data<AuthService>,
+    credentials: web::Json<AuthLoginRequest>,
+    session: Session,
     session_service: web::Data<SessionService>,
-    request: HttpRequest,
-) -> Result<impl Responder, Error> {
-    let user = match auth_service
-        .authenticate(&req.username, &req.password)
-        .await?
-    {
-        Some(user) => user,
-        None => return Ok(HttpResponse::Unauthorized().finish()),
+    req: HttpRequest,
+) -> impl Responder {
+    // TODO: Implement actual authentication logic here
+    // For now, we'll just create a session with a test user
+    let user = User {
+        id: uuid::Uuid::new_v4(),
+        username: credentials.username.clone(),
+        password_hash: "dummy_hash".to_string(), // TODO: Implement proper password hashing
+        failed_login_attempts: 0,
+        last_login: None,
+        is_locked: false,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     };
 
-    let session = session_service.create_session(&user, &request).await?;
+    // Create a new ServiceRequest from the HttpRequest
+    let service_req = ServiceRequest::new(req);
+    if let Err(e) = session_service.create_session(&session, &user, &service_req).await {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": e.to_string()
+        }));
+    }
 
-    Ok(HttpResponse::Ok().json(json!({
-        "token": session.token,
-        "csrf_token": session.csrf_token,
-    })))
+    HttpResponse::Ok().json(serde_json::json!({
+        "message": "Login successful"
+    }))
+}
+
+pub async fn logout(
+    session: Session,
+    session_service: web::Data<SessionService>,
+) -> impl Responder {
+    if let Err(e) = session_service.destroy_session(&session).await {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": e.to_string()
+        }));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "message": "Logout successful"
+    }))
 }

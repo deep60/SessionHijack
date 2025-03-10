@@ -4,6 +4,7 @@ use actix_identity::{IdentityService, CookieIdentityPolicy};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::rc::Rc;
 
 mod config;
 mod error;
@@ -12,7 +13,7 @@ mod services;
 
 use crate::config::SecurityConfig;
 use crate::middleware::csrf_protection::{CsrfStore, CsrfProtection};
-use crate::services::session_protection::{LoginAttemptStore, SessionProtection};
+use crate::services::session_protection::{LoginAttemptStore, SessionManager};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LoginRequest {
@@ -24,6 +25,7 @@ async fn login(
     credentials: web::Json<LoginRequest>,
     session: Session,
     login_store: web::Data<Arc<LoginAttemptStore>>,
+    session_manager: web::Data<Arc<SessionManager>>,
     csrf_store: web::Data<Rc<CsrfStore>>,
 ) -> impl Responder {
     // Record login attempt
@@ -38,7 +40,7 @@ async fn login(
     let user_id = "test_user".to_string();
     
     // Create session
-    if let Err(e) = SessionProtection::new().create_session(&session, user_id.clone()).await {
+    if let Err(e) = session_manager.create_session(&session, user_id.clone()).await {
         return HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
         }));
@@ -55,9 +57,10 @@ async fn login(
 
 async fn logout(
     session: Session,
+    session_manager: web::Data<Arc<SessionManager>>,
     csrf_store: web::Data<Rc<CsrfStore>>,
 ) -> impl Responder {
-    if let Err(e) = SessionProtection::new().destroy_session(&session).await {
+    if let Err(e) = session_manager.destroy_session(&session).await {
         return HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
         }));
@@ -70,9 +73,16 @@ async fn logout(
 
 async fn protected_resource(
     session: Session,
+    session_manager: web::Data<Arc<SessionManager>>,
     req: actix_web::HttpRequest,
 ) -> impl Responder {
-    // This endpoint is protected by the session middleware
+    // Validate session
+    if let Err(e) = session_manager.validate_session(ServiceRequest::from(req), &session).await {
+        return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": e.to_string()
+        }));
+    }
+
     HttpResponse::Ok().json(serde_json::json!({
         "message": "Protected resource accessed successfully"
     }))
@@ -99,6 +109,7 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize stores
     let login_store = Arc::new(LoginAttemptStore::new(config.clone()));
+    let session_manager = Arc::new(SessionManager::new(config.clone()));
     let csrf_store = Rc::new(CsrfStore::new());
 
     HttpServer::new(move || {
@@ -112,6 +123,7 @@ async fn main() -> std::io::Result<()> {
             )
             .wrap(CsrfProtection)
             .app_data(web::Data::new(login_store.clone()))
+            .app_data(web::Data::new(session_manager.clone()))
             .app_data(web::Data::new(csrf_store.clone()))
             .route("/login", web::post().to(login))
             .route("/logout", web::post().to(logout))

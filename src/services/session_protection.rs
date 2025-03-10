@@ -2,14 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::collections::HashMap;
-use crate::models::session::Session;
-use uuid;
-use actix_web::{dev::ServiceRequest, Error, HttpMessage};
-use actix_session::Session;
-use std::future::{ready, Ready};
-use std::rc::Rc;
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
+use actix_web::{dev::ServiceRequest, Error, HttpMessage};
+use actix_session::Session as ActixSession;
+use std::sync::Mutex;
 use crate::error::Error as AppError;
 use crate::config::SecurityConfig;
 
@@ -180,20 +176,22 @@ impl LoginAttemptStore {
     }
 }
 
-pub struct SessionProtection;
+pub struct SessionManager {
+    config: SecurityConfig,
+}
 
-impl SessionProtection {
-    pub fn new() -> Self {
-        Self
+impl SessionManager {
+    pub fn new(config: SecurityConfig) -> Self {
+        Self { config }
     }
 
     pub async fn validate_session(
         &self,
         req: ServiceRequest,
-        session: &Session,
+        session: &ActixSession,
     ) -> Result<ServiceRequest, Error> {
         // Check if user is authenticated
-        if let Some(user_id) = session.get::<String>("user_id").await? {
+        if let Some(user_id) = session.get::<String>("user_id").map_err(|e| AppError::Internal(e.to_string()))? {
             // Add user_id to request extensions for use in handlers
             req.extensions_mut().insert(user_id);
             Ok(req)
@@ -204,15 +202,18 @@ impl SessionProtection {
 
     pub async fn create_session(
         &self,
-        session: &Session,
+        session: &ActixSession,
         user_id: String,
     ) -> Result<(), Error> {
-        session.insert("user_id", user_id).await?;
+        session.insert("user_id", user_id)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
-    pub async fn destroy_session(&self, session: &Session) -> Result<(), Error> {
-        session.purge().await?;
+    pub async fn destroy_session(&self, session: &ActixSession) -> Result<(), Error> {
+        session.purge()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 }
