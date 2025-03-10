@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::net::IpAddr;
+use std::str::FromStr;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,15 +69,46 @@ impl Session {
     }
 
     pub async fn find_by_token(pool: &PgPool, token: &str) -> Result<Option<Self>, sqlx::Error> {
-        sqlx::query_as!(
-            Session,
+        let result = sqlx::query!(
             r#"
-            SELECT * FROM sessions WHERE token = $1 AND is_valid = true
+            SELECT 
+                id,
+                user_id,
+                token,
+                ip_address,
+                user_agent,
+                device_fingerprint,
+                csrf_token,
+                created_at,
+                last_activity,
+                expires_at,
+                is_valid
+            FROM sessions 
+            WHERE token = $1 AND is_valid = true
             "#,
             token
         )
         .fetch_optional(pool)
-        .await
+        .await?;
+
+        Ok(result.map(|row| {
+            let ip_address = IpAddr::from_str(&row.ip_address)
+                .expect("Failed to parse IP address from database");
+            
+            Session {
+                id: row.id,
+                user_id: row.user_id,
+                token: row.token,
+                ip_address,
+                user_agent: row.user_agent,
+                device_fingerprint: row.device_fingerprint,
+                csrf_token: row.csrf_token,
+                created_at: row.created_at,
+                last_activity: row.last_activity,
+                expires_at: row.expires_at,
+                is_valid: row.is_valid,
+            }
+        }))
     }
 
     pub async fn update_activity(&self, pool: &PgPool) -> Result<(), sqlx::Error> {

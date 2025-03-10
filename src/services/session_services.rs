@@ -8,7 +8,7 @@ use crate::{
     models::{user::User, session::Session},
     error::Error,
     config::SecurityConfig,
-    services::session_protection::{SessionStore, SessionProtection},
+    services::session_protection::{SessionStore, SessionProtection, SessionData},
 };
 
 pub struct SessionService {
@@ -102,11 +102,11 @@ impl SessionProtection for SessionService {
                     return false;
                 }
 
-                if self.is_session_expired(&session) {
+                if self.is_session_expired(session) {
                     return false;
                 }
 
-                if session.ip_address.to_string() != ip.to_string() {
+                if session.ip_address != ip {
                     return false;
                 }
 
@@ -123,8 +123,8 @@ impl SessionProtection for SessionService {
         }
     }
 
-    fn is_session_expired(&self, session: &Session) -> bool {
-        Utc::now() > session.expires_at
+    fn is_session_expired(&self, session: &SessionData) -> bool {
+        Utc::now() > session.created_at + self.config.session_timeout
     }
 
     fn clear_expired_sessions(&mut self) {

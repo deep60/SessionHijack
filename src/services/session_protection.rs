@@ -1,7 +1,7 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
-use std::{collections::HashMap, env::home_dir};
+use std::collections::HashMap;
 use crate::models::session::Session;
 use uuid;
 
@@ -29,13 +29,13 @@ pub struct LogoutRequest {
 
 pub trait SessionProtection {
     fn validate_session(&self, session_id: &str, ip: IpAddr, user_agent: &str) -> bool;
-    fn is_session_expired(&self, session: &Session) -> bool;
+    fn is_session_expired(&self, session: &SessionData) -> bool;
     fn clear_expired_sessions(&mut self);
 }
 
 #[derive(Default)]
 pub struct SessionStore {
-    sessions: HashMap<String, Session>,
+    sessions: HashMap<String, SessionData>,
 }
 
 impl SessionStore {
@@ -45,34 +45,42 @@ impl SessionStore {
         }
     }
 
-    pub fn add_session(&mut self, session: Session) {
-        self.sessions.insert(session.token.clone(), session);
+    pub fn add_session(&mut self, session_id: String, user_id: String, ip: IpAddr, user_agent: String) {
+        let session_data = SessionData {
+            user_id: user_id.clone(),
+            username: "user".to_string(), // This should come from the user service
+            ip_address: ip,
+            user_agent,
+            created_at: Utc::now(),
+            last_activity: Utc::now(),
+            is_valid: true,
+        };
+        self.sessions.insert(session_id, session_data);
     }
 
-    pub fn get_session(&self, token: &str) -> Option<&Session> {
-        self.sessions.get(token)
+    pub fn get_session(&self, session_id: &str) -> Option<&SessionData> {
+        self.sessions.get(session_id)
     }
 
-    pub fn remove_session(&mut self, token: &str) {
-        self.sessions.remove(token);
+    pub fn remove_session(&mut self, session_id: &str) {
+        self.sessions.remove(session_id);
     }
 
-    pub fn clear_expired_sessions(&mut self) {
-        let now: DateTime<Utc> = Utc::now();
-        self.sessions.retain(|_, session| session.expires_at > now);
-    }
-
-    pub fn invalidate_session(&mut self, token: &str) {
-        if let Some(session) = self.sessions.get_mut(token) {
+    pub fn invalidate_session(&mut self, session_id: &str) {
+        if let Some(session) = self.sessions.get_mut(session_id) {
             session.is_valid = false;
         }
     }
 
-    pub fn get_user_sessions(&self, user_id: uuid::Uuid) -> Vec<&Session> {
-        self.sessions
-            .values()
-            .filter(|s| s.user_id == user_id)
-            .collect()
+    pub fn clear_expired_sessions(&mut self) {
+        let now = Utc::now();
+        self.sessions.retain(|_, session| {
+            let is_valid = session.is_valid && (now - session.last_activity).num_seconds() < 3600;
+            if !is_valid {
+                session.is_valid = false;
+            }
+            is_valid
+        });
     }
 }
 
@@ -83,17 +91,14 @@ impl SessionProtection for SessionStore {
                 return false;
             }
 
-            // Check if the session is expired
             if self.is_session_expired(session) {
                 return false;
             }
 
-            //Check if IP address changed (potential hijacking)
             if session.ip_address != ip {
                 return false;
             }
 
-            // Check if user agent changed
             if session.user_agent != user_agent {
                 return false;
             }
@@ -104,22 +109,18 @@ impl SessionProtection for SessionStore {
         }
     }
 
-    fn is_session_expired(&self, session: &Session) -> bool {
-        Utc::now() > session.expires_at
+    fn is_session_expired(&self, session: &SessionData) -> bool {
+        Utc::now() > session.created_at + chrono::Duration::hours(1)
     }
 
     fn clear_expired_sessions(&mut self) {
-        let expired_sessions: Vec<String> = self
-            .sessions
-            .iter()
-            .filter(|(_, data)| {
-                self.is_session_expired(data)
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-
-        for session_id in expired_sessions {
-            self.sessions.remove(&session_id);
-        }
+        let now = Utc::now();
+        self.sessions.retain(|_, session| {
+            let is_valid = session.is_valid && (now - session.last_activity).num_seconds() < 3600;
+            if !is_valid {
+                session.is_valid = false;
+            }
+            is_valid
+        });
     }
 }

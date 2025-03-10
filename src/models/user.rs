@@ -63,4 +63,12 @@ impl User {
         .await?;
         Ok(())
     }
+
+    pub async fn update_login_attempts(&self, pool: &PgPool, is_valid: bool) -> Result<(), sqlx::Error> {
+        if is_valid {
+            self.reset_failed_attempts(pool).await
+        } else {
+            self.increment_failed_attempts(pool).await
+        }
+    }
 }

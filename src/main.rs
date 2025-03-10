@@ -1,25 +1,19 @@
-use actix_identity::{CookieIdentityPolicy, IdentityExt, IdentityService};
-use actix_session::{storage::CookieSessionStore, Session, SessionMiddleware};
+use actix_identity::{IdentityService, CookieIdentityPolicy};
+use actix_session::{Session, storage::CookieSessionStore};
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use chrono::Utc;
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use uuid::Uuid;
 
-use csrf_protection::CsrfStore;
-pub use middleware::csrf_protection;
-pub use services::session_protection;
-use session_protection::{
-    LoginRequest, LogoutRequest, SessionData, SessionProtection, SessionStore,
-};
+use crate::middleware::csrf_protection::CsrfStore;
+use crate::services::session_protection::{LoginRequest, LogoutRequest, SessionStore};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let session_store = Arc::new(Mutex::new(SessionStore::new()));
-    let csrf_store = Arc::new(Mutex::new(CSrfStore::new()));
+    let csrf_store = Arc::new(Mutex::new(CsrfStore::new()));
 
     println!("Starting server at http://127.0.0.1:3000");
 
@@ -27,8 +21,8 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(session_store.clone()))
             .app_data(web::Data::new(csrf_store.clone()))
-            //Set up secure cookie policy
-            .warp(IdentityService::new(
+            // Set up secure cookie policy
+            .wrap(IdentityService::new(
                 CookieIdentityPolicy::new(&[0; 32])
                     .name("auth-cookie")
                     .secure(true)
@@ -36,7 +30,7 @@ async fn main() -> std::io::Result<()> {
                     .same_site(actix_web::cookie::SameSite::Strict)
                     .max_age(Duration::from_secs(3600)),
             ))
-            //Session middleware
+            // Session middleware
             .wrap(
                 CookieSessionStore::signed(&[0; 32])
                     .secure(true)
@@ -44,10 +38,10 @@ async fn main() -> std::io::Result<()> {
                     .name("session")
                     .max_age(3600),
             )
-            //Routes
+            // Routes
             .service(web::resource("/login").route(web::post().to(login)))
             .service(web::resource("/logout").route(web::post().to(logout)))
-            .service(web::resource("/protected").route(web::get().to(protected_resources)))
+            .service(web::resource("/protected").route(web::get().to(protected_resource)))
             .service(web::resource("/csrf_token").route(web::get().to(get_csrf_token)))
             .service(web::resource("/").route(web::get().to(index)))
     })
@@ -66,7 +60,7 @@ async fn login(
     session_store: web::Data<Arc<Mutex<SessionStore>>>,
     request: actix_web::HttpRequest,
 ) -> impl Responder {
-    // Simple Hardcore authentication
+    // Simple hardcoded authentication
     if req.username == "user" && req.password == "password" {
         let session_id = Uuid::new_v4().to_string();
         let ip = request
@@ -83,34 +77,25 @@ async fn login(
             .unwrap_or("unknown")
             .to_string();
 
-        let new_session = SessionData {
-            user_id: "user123".to_string(),
-            username: req.username.clone(),
-            ip_address: ip,
-            user_agent,
-            created_at: Utc::now(),
-            last_Activity: Utc::now(),
-            is_valid: true,
-        };
-
-        //STORE Session
+        // Store session
         session_store
             .lock()
             .unwrap()
-            .add_session(session_id.clone());
-        // SET Cookie
+            .add_session(session_id.clone(), "user123".to_string(), ip, user_agent);
+
+        // Set cookie
         session.insert("session_id", session_id.clone()).unwrap();
 
         HttpResponse::Ok().json(serde_json::json!({
             "status": "success",
-            "messgae": "Logged in successfully",
+            "message": "Logged in successfully",
             "session_id": session_id,
-            "user_id": "user1234"
+            "user_id": "user123"
         }))
     } else {
         HttpResponse::Unauthorized().json(serde_json::json!({
             "status": "error",
-            "messgae": "Inavalid credentials"
+            "message": "Invalid credentials"
         }))
     }
 }
@@ -125,7 +110,7 @@ async fn logout(
         _ => {
             return HttpResponse::BadRequest().json(serde_json::json!({
                 "status": "error",
-                "messgae": "No active session"
+                "message": "No active session"
             }))
         }
     };
@@ -135,11 +120,11 @@ async fn logout(
         if session_data.user_id != req.user_id {
             return HttpResponse::Forbidden().json(serde_json::json!({
                 "status": "error",
-                "messgae": "Session doesn't belong to this user"
+                "message": "Session doesn't belong to this user"
             }));
         }
 
-        store.invalidate_session(&session_id);
+        store.remove_session(&session_id);
         session.remove("session_id");
 
         HttpResponse::Ok().json(serde_json::json!({
@@ -149,7 +134,7 @@ async fn logout(
     } else {
         HttpResponse::NotFound().json(serde_json::json!({
             "status": "error",
-            "messgae": "Session not found"
+            "message": "Session not found"
         }))
     }
 }
@@ -164,7 +149,7 @@ async fn protected_resource(
         _ => {
             return HttpResponse::Unauthorized().json(serde_json::json!({
                 "status": "error",
-                "messgae": "Authentication required"
+                "message": "Authentication required"
             }))
         }
     };
@@ -183,32 +168,17 @@ async fn protected_resource(
         .unwrap_or("unknown")
         .to_string();
 
-    let simulated_ip = request
-        .headers()
-        .get("X-Simulated-IP")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|ip| IpAddr::from_str(ip).ok());
-
-    let simulated_user_agent = request
-        .headers()
-        .get("X-Simulated-User-Agent")
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string());
-
-    let check_ip = simulated_ip.unwrap_or(ip);
-    let check_ua = simulated_user_agent.unwrap_or(user_agent);
-    let mut store = session_store.lock().unwrap();
-
+    let store = session_store.lock().unwrap();
     if let Some(session_data) = store.get_session(&session_id) {
         if !session_data.is_valid {
             session.remove("session_id");
             return HttpResponse::Unauthorized().json(serde_json::json!({
                 "status": "error",
-                "messgae": "Session hasn been invalidated"
+                "message": "Session has been invalidated"
             }));
         }
 
-        if session_data.ip_address != check_ip {
+        if session_data.ip_address != ip {
             store.invalidate_session(&session_id);
             session.remove("session_id");
             return HttpResponse::Forbidden().json(serde_json::json!({
@@ -217,7 +187,7 @@ async fn protected_resource(
             }));
         }
 
-        if session_data.user_agent != check_ua {
+        if session_data.user_agent != user_agent {
             store.invalidate_session(&session_id);
             session.remove("session_id");
             return HttpResponse::Forbidden().json(serde_json::json!({
@@ -225,8 +195,6 @@ async fn protected_resource(
                 "message": "Session hijacking detected: User agent mismatch"
             }));
         }
-
-        store.update_last_activity(&session_id);
 
         HttpResponse::Ok().json(serde_json::json!({
             "status": "success",
@@ -240,7 +208,7 @@ async fn protected_resource(
         session.remove("session_id");
         HttpResponse::Unauthorized().json(serde_json::json!({
             "status": "error",
-            "message": "Inavalid session"
+            "message": "Invalid session"
         }))
     }
 }
@@ -251,7 +219,7 @@ async fn get_csrf_token(
 ) -> impl Responder {
     let user_id = session.get::<String>("session_id").ok().flatten();
 
-    //Generate new CSRF token
+    // Generate new CSRF token
     let token = csrf_store.lock().unwrap().generate_token(user_id);
     HttpResponse::Ok().json(serde_json::json!({
         "csrf_token": token
