@@ -2,21 +2,29 @@ use chrono::Duration;
 use serde::Deserialize;
 use std::env;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SecurityConfig {
-    pub session_timeout: Duration,
-    pub max_sessions_per_user: usize,
-    pub csrf_token_length: usize,
-    pub csrf_token_expiry: Duration,
+    pub session_ttl: i64,
+    pub max_login_attempts: u32,
+    pub lockout_duration: i64,
+    pub csrf_token_ttl: i64,
+    pub redis_url: String,
+    pub cookie_secure: bool,
+    pub cookie_http_only: bool,
+    pub cookie_same_site: String,
 }
 
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
-            session_timeout: Duration::hours(1),
-            max_sessions_per_user: 5,
-            csrf_token_length: 32,
-            csrf_token_expiry: Duration::hours(1),
+            session_ttl: 3600,
+            max_login_attempts: 5,
+            lockout_duration: 1800,
+            csrf_token_ttl: 3600,
+            redis_url: "redis://127.0.0.1/".to_string(),
+            cookie_secure: true,
+            cookie_http_only: true,
+            cookie_same_site: "Strict".to_string(),
         }
     }
 }

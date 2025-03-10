@@ -1,0 +1,1 @@
+fn(Json<{type error}>, actix_session::Session, actix_web::web::Data<Arc<Mutex<{type error}>, {type error}>>, HttpRequest) -> impl std::future::Future<Output = impl Responder> {login}

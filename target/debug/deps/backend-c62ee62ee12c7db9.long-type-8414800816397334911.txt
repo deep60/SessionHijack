@@ -1,0 +1,1 @@
+fn(actix_session::Session, HttpRequest, actix_web::web::Data<Arc<Mutex<{type error}>, {type error}>>) -> impl std::future::Future<Output = impl Responder> {protected_resource}
