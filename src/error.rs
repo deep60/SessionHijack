@@ -1,20 +1,26 @@
 use actix_web::{HttpResponse, ResponseError};
 use std::fmt;
 use serde::Serialize;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
-    InternalServerError,
-    Internal(String),
-    BadRequest(String),
-    Unauthorized,
+    #[error("Invalid IP address")]
     InvalidIPAddress,
+    #[error("Invalid user agent")]
     InvalidUserAgent,
+    #[error("Session not found")]
+    SessionNotFound,
+    #[error("Session expired")]
     SessionExpired,
-    InvalidSession,
-    DatabaseError(String),
-    NotFound(String),
-    AccountLocked,
+    #[error("Session hijacking detected")]
+    SessionHijacking,
+    #[error("Invalid CSRF token")]
+    InvalidCsrfToken,
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
+    #[error("Redis error: {0}")]
+    RedisError(#[from] redis::RedisError),
 }
 
 #[derive(Serialize)]
@@ -65,7 +71,7 @@ impl ResponseError for Error {
             }
             Error::DatabaseError(ref error) => {
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: error.clone(),
+                    message: error.to_string(),
                 })
             }
             Error::NotFound(ref message) => {
@@ -78,12 +84,32 @@ impl ResponseError for Error {
                     message: self.to_string(),
                 })
             }
+            Error::SessionNotFound => {
+                HttpResponse::NotFound().json(ErrorResponse {
+                    message: self.to_string(),
+                })
+            }
+            Error::SessionHijacking => {
+                HttpResponse::Forbidden().json(ErrorResponse {
+                    message: self.to_string(),
+                })
+            }
+            Error::InvalidCsrfToken => {
+                HttpResponse::BadRequest().json(ErrorResponse {
+                    message: self.to_string(),
+                })
+            }
+            Error::RedisError(ref error) => {
+                HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: error.to_string(),
+                })
+            }
         }
     }
 }
 
 impl From<sqlx::Error> for Error {
     fn from(error: sqlx::Error) -> Self {
-        Error::DatabaseError(error.to_string())
+        Error::DatabaseError(error)
     }
 }

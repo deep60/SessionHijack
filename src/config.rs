@@ -2,29 +2,21 @@ use chrono::Duration;
 use serde::Deserialize;
 use std::env;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SecurityConfig {
     pub session_timeout: Duration,
     pub max_sessions_per_user: usize,
-    pub max_failed_attempts: usize,
-    pub lockout_duration: Duration,
-    pub password_min_length: usize,
-    pub password_require_numbers: bool,
-    pub password_require_symbols: bool,
-    pub password_require_uppercase: bool,
+    pub csrf_token_length: usize,
+    pub csrf_token_expiry: Duration,
 }
 
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
-            session_timeout: Duration::hours(24),
+            session_timeout: Duration::hours(1),
             max_sessions_per_user: 5,
-            max_failed_attempts: 5,
-            lockout_duration: Duration::minutes(30),
-            password_min_length: 8,
-            password_require_numbers: true,
-            password_require_symbols: true,
-            password_require_uppercase: true,
+            csrf_token_length: 32,
+            csrf_token_expiry: Duration::hours(1),
         }
     }
 }

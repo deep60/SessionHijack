@@ -1,5 +1,5 @@
 use actix_identity::{IdentityService, CookieIdentityPolicy};
-use actix_session::{Session, storage::CookieSessionStore};
+use actix_session::{Session, storage::RedisSessionStore};
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -7,13 +7,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::middleware::csrf_protection::CsrfStore;
+use crate::middleware::csrf_protection::{CsrfStore, CsrfMiddleware};
 use crate::services::session_protection::{LoginRequest, LogoutRequest, SessionStore};
+use crate::config::SecurityConfig;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let session_store = Arc::new(Mutex::new(SessionStore::new()));
     let csrf_store = Arc::new(Mutex::new(CsrfStore::new()));
+    let config = SecurityConfig::default();
+
+    // Initialize Redis session store
+    let redis_store = RedisSessionStore::new("redis://127.0.0.1")
+        .await
+        .expect("Failed to create Redis session store");
 
     println!("Starting server at http://127.0.0.1:3000");
 
@@ -21,6 +28,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(session_store.clone()))
             .app_data(web::Data::new(csrf_store.clone()))
+            .app_data(web::Data::new(config.clone()))
             // Set up secure cookie policy
             .wrap(IdentityService::new(
                 CookieIdentityPolicy::new(&[0; 32])
@@ -31,13 +39,9 @@ async fn main() -> std::io::Result<()> {
                     .max_age(Duration::from_secs(3600)),
             ))
             // Session middleware
-            .wrap(
-                CookieSessionStore::signed(&[0; 32])
-                    .secure(true)
-                    .http_only(true)
-                    .name("session")
-                    .max_age(3600),
-            )
+            .wrap(redis_store.clone())
+            // CSRF middleware
+            .wrap(CsrfMiddleware::new(csrf_store.clone()))
             // Routes
             .service(web::resource("/login").route(web::post().to(login)))
             .service(web::resource("/logout").route(web::post().to(logout)))

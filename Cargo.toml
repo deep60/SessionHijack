@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 actix-identity = "0.8.0"
-actix-session = { version = "0.10.1", features = ["cookie-session"] }
+actix-session = { version = "0.10.1", features = ["redis-session"] }
 actix-web = "4.9.0"
 argon2 = "0.5.3"
 chrono = { version = "0.4.39", features = ["serde"] }
@@ -21,3 +21,4 @@ futures-util = "0.3"
 derive_more = "0.99"
 env_logger = "0.10"
 dotenv = "0.15"
+redis = { version = "0.23.0", features = ["tokio-comp"] }
