@@ -4,6 +4,8 @@ use actix_web::{
     Error,
 };
 use futures_util::future::{ready, Ready};
+use std::future::Future;
+use std::pin::Pin;
 use crate::services::session_services::SessionService;
 
 pub struct SessionMiddleware {
@@ -39,4 +41,27 @@ where
 pub struct SessionMiddlewareService<S> {
     service: S,
     session_service: Arc<SessionService>,
+}
+
+impl<S, B> Service<ServiceRequest> for SessionMiddlewareService<S>
+where
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S::Future: 'static,
+    B: 'static,
+{
+    type Response = ServiceResponse<B>;
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+
+    fn poll_ready(&self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(ctx)
+    }
+
+    fn call(&self, req: ServiceRequest) -> Self::Future {
+        let fut = self.service.call(req);
+        Box::pin(async move {
+            let res = fut.await?;
+            Ok(res)
+        })
+    }
 }

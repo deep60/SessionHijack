@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::{collections::HashMap, env::home_dir};
+use crate::models::session::Session;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
@@ -27,13 +28,17 @@ pub struct LogoutRequest {
 
 pub trait SessionProtection {
     fn validate_session(&self, session_id: &str, ip: IpAddr, user_agent: &str) -> bool;
-    fn is_session_expired(&self, session_id: &str) -> bool;
+    fn is_session_expired(&self, session: &Session) -> bool;
     fn clear_expired_sessions(&mut self);
+}
+
+pub struct SessionStore {
+    sessions: HashMap<String, Session>,
 }
 
 impl SessionStore {
     pub fn new() -> Self {
-        SessionStore {
+        Self {
             sessions: HashMap::new(),
         }
     }
@@ -71,7 +76,7 @@ impl SessionProtection for SessionStore {
             }
 
             // Check if the session is expired
-            if self.is_session_expired(session_id) {
+            if self.is_session_expired(session) {
                 return false;
             }
 
@@ -91,14 +96,8 @@ impl SessionProtection for SessionStore {
         }
     }
 
-    fn is_session_expired(&self, session_id: &str) -> bool {
-        if let Some(session) = self.session.get(session_id) {
-            let session_age = Utc::now() - session.last_activity;
-            //Session timeout after 1 hour of inactivity
-            session_age > Duration::hours(1)
-        } else {
-            true
-        }
+    fn is_session_expired(&self, session: &Session) -> bool {
+        Utc::now() > session.expires_at
     }
 
     fn clear_expired_sessions(&mut self) {
@@ -106,8 +105,7 @@ impl SessionProtection for SessionStore {
             .sessions
             .iter()
             .filter(|(_, data)| {
-                let session_age = Utc::now() - data.last_activity;
-                session_age > Duration::hours(1)
+                self.is_session_expired(data)
             })
             .map(|(id, _)| id.clone())
             .collect();
