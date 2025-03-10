@@ -3,6 +3,7 @@ use actix_web::HttpRequest;
 use chrono::Utc;
 use uuid::Uuid;
 use sha2::{Sha256, Digest};
+use std::net::IpAddr;
 use crate::{
     models::{user::User, session::Session},
     error::Error,
@@ -29,7 +30,7 @@ impl SessionService {
         let user_agent = self.extract_user_agent(request)?;
         let device_fingerprint = self.generate_device_fingerprint(request);
 
-        self.enforce_session_limits(user.id)?;
+        self.enforce_session_limits(user.id).await?;
 
         let session = Session {
             id: Uuid::new_v4(),
@@ -66,7 +67,7 @@ impl SessionService {
         format!("{:x}", hasher.finalize())
     }
 
-    fn extract_ip_address(&self, request: &HttpRequest) -> Result<std::net::IpAddr, Error> {
+    fn extract_ip_address(&self, request: &HttpRequest) -> Result<IpAddr, Error> {
         request
             .connection_info()
             .realip_remote_addr()
@@ -87,14 +88,48 @@ impl SessionService {
         Uuid::new_v4().to_string()
     }
 
-    async fn enforce_session_limits(&self, user_id: Uuid) -> Result<(), Error> {
+    async fn enforce_session_limits(&self, _user_id: Uuid) -> Result<(), Error> {
         // Implementation for session limits
         Ok(())
     }
 }
 
 impl SessionProtection for SessionService {
+    fn validate_session(&self, session_id: &str, ip: IpAddr, user_agent: &str) -> bool {
+        if let Ok(store) = self.store.lock() {
+            if let Some(session) = store.get_session(session_id) {
+                if !session.is_valid {
+                    return false;
+                }
+
+                if self.is_session_expired(&session) {
+                    return false;
+                }
+
+                if session.ip_address.to_string() != ip.to_string() {
+                    return false;
+                }
+
+                if session.user_agent != user_agent {
+                    return false;
+                }
+
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
     fn is_session_expired(&self, session: &Session) -> bool {
         Utc::now() > session.expires_at
+    }
+
+    fn clear_expired_sessions(&mut self) {
+        if let Ok(mut store) = self.store.lock() {
+            store.clear_expired_sessions();
+        }
     }
 }

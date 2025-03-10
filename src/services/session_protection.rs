@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::{collections::HashMap, env::home_dir};
 use crate::models::session::Session;
+use uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
@@ -32,6 +33,7 @@ pub trait SessionProtection {
     fn clear_expired_sessions(&mut self);
 }
 
+#[derive(Default)]
 pub struct SessionStore {
     sessions: HashMap<String, Session>,
 }
@@ -43,28 +45,34 @@ impl SessionStore {
         }
     }
 
-    pub fn add_session(&mut self, session_id: String, data: SessionData) {
-        self.sessions.insert(session_id, data);
+    pub fn add_session(&mut self, session: Session) {
+        self.sessions.insert(session.token.clone(), session);
     }
 
-    pub fn get_session(&self, session_id: &str) -> Option<SessionData> {
-        self.sessions.get(session_id).cloned()
+    pub fn get_session(&self, token: &str) -> Option<&Session> {
+        self.sessions.get(token)
     }
 
-    pub fn invalidate_session(&mut self, session_id: &str) {
-        if let Some(session) = self.sessions.get_mut(session_id) {
+    pub fn remove_session(&mut self, token: &str) {
+        self.sessions.remove(token);
+    }
+
+    pub fn clear_expired_sessions(&mut self) {
+        let now: DateTime<Utc> = Utc::now();
+        self.sessions.retain(|_, session| session.expires_at > now);
+    }
+
+    pub fn invalidate_session(&mut self, token: &str) {
+        if let Some(session) = self.sessions.get_mut(token) {
             session.is_valid = false;
         }
     }
 
-    pub fn update_last_activity(&mut self, session_id: &str) {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            session.last_activity = Utc::now();
-        }
-    }
-
-    pub fn remove_session(&mut self, session_id: &str) {
-        self.sessions.remove(session_id);
+    pub fn get_user_sessions(&self, user_id: uuid::Uuid) -> Vec<&Session> {
+        self.sessions
+            .values()
+            .filter(|s| s.user_id == user_id)
+            .collect()
     }
 }
 

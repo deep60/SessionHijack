@@ -1,50 +1,86 @@
 use actix_web::{HttpResponse, ResponseError};
-use thiserror::Error;
+use derive_more::Display;
+use serde::Serialize;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
+    #[display(fmt = "Internal Server Error")]
+    InternalServerError,
 
-    #[error("Internal error: {0}")]
-    Internal(String),
+    #[display(fmt = "Bad Request: {}", _0)]
+    BadRequest(String),
 
-    #[error("Account is locked")]
-    AccountLocked,
+    #[display(fmt = "Unauthorized")]
+    Unauthorized,
 
-    #[error("Invalid session")]
-    InvalidSession,
-
-    #[error("Session expired")]
-    SessionExpired,
-
-    #[error("IP address mismatch")]
-    IPMismatch,
-
-    #[error("User agent mismatch")]
-    UserAgentMismatch,
-
-    #[error("Device fingerprint mismatch")]
-    DeviceFingerprintMismatch,
-
-    #[error("Invalid IP address")]
+    #[display(fmt = "Invalid IP Address")]
     InvalidIPAddress,
 
-    #[error("Invalid user agent")]
+    #[display(fmt = "Invalid User Agent")]
     InvalidUserAgent,
+
+    #[display(fmt = "Session Expired")]
+    SessionExpired,
+
+    #[display(fmt = "Invalid Session")]
+    InvalidSession,
+
+    #[display(fmt = "Database Error: {}", _0)]
+    DatabaseError(String),
+
+    #[display(fmt = "Not Found: {}", _0)]
+    NotFound(String),
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    message: String,
 }
 
 impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         match self {
-            Error::AccountLocked => HttpResponse::Forbidden().json(self.to_string()),
-            Error::InvalidSession | Error::SessionExpired => {
-                HttpResponse::Unauthorized().json(self.to_string())
+            Error::InternalServerError => {
+                HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: self.to_string(),
+                })
             }
-            Error::IPMismatch | Error::UserAgentMismatch | Error::DeviceFingerprintMismatch => {
-                HttpResponse::Forbidden().json(self.to_string())
+            Error::BadRequest(ref message) => {
+                HttpResponse::BadRequest().json(ErrorResponse {
+                    message: message.clone(),
+                })
             }
-            _ => HttpResponse::InternalServerError().json(self.to_string()),
+            Error::Unauthorized => {
+                HttpResponse::Unauthorized().json(ErrorResponse {
+                    message: self.to_string(),
+                })
+            }
+            Error::InvalidIPAddress | Error::InvalidUserAgent => {
+                HttpResponse::BadRequest().json(ErrorResponse {
+                    message: self.to_string(),
+                })
+            }
+            Error::SessionExpired | Error::InvalidSession => {
+                HttpResponse::Unauthorized().json(ErrorResponse {
+                    message: self.to_string(),
+                })
+            }
+            Error::DatabaseError(ref error) => {
+                HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: error.clone(),
+                })
+            }
+            Error::NotFound(ref message) => {
+                HttpResponse::NotFound().json(ErrorResponse {
+                    message: message.clone(),
+                })
+            }
         }
+    }
+}
+
+impl From<sqlx::Error> for Error {
+    fn from(error: sqlx::Error) -> Self {
+        Error::DatabaseError(error.to_string())
     }
 }
