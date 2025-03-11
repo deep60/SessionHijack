@@ -1,4 +1,4 @@
-use actix_web::{web, HttpRequest, HttpResponse, Responder, dev::ServiceRequest};
+use actix_web::{web, HttpRequest, HttpResponse, Responder, dev::{ServiceRequest, Payload}};
 use serde_json::json;
 use crate::{
     services::{
@@ -25,6 +25,7 @@ pub async fn login(
     session: Session,
     session_service: web::Data<SessionService>,
     req: HttpRequest,
+    payload: Payload,
 ) -> impl Responder {
     // TODO: Implement actual authentication logic here
     // For now, we'll just create a session with a test user
@@ -39,8 +40,8 @@ pub async fn login(
         updated_at: chrono::Utc::now(),
     };
 
-    // Create a new ServiceRequest from the HttpRequest
-    let service_req = ServiceRequest::new(req);
+    // Create a ServiceRequest from HttpRequest and Payload
+    let service_req = ServiceRequest::from_parts(req, payload);
     if let Err(e) = session_service.create_session(&session, &user, &service_req).await {
         return HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
