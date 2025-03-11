@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use std::rc::Rc;
 use std::time::Duration;
 use actix_web::cookie::Key;
+use uuid;
+use chrono;
 
 mod config;
 mod error;
@@ -39,7 +41,16 @@ async fn login(
 
     // TODO: Implement actual authentication logic here
     // For now, we'll just create a session
-    let user_id = "test_user".to_string();
+    let user = User {
+        id: uuid::Uuid::new_v4(),
+        username: credentials.username.clone(),
+        password_hash: "dummy_hash".to_string(), // TODO: Implement proper password hashing
+        failed_login_attempts: 0,
+        last_login: None,
+        is_locked: false,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
     
     // Create session
     if let Err(e) = session_manager.create_session(&session, user_id.clone()).await {

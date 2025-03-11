@@ -8,7 +8,7 @@ pub struct User {
     pub id: Uuid,
     pub username: String,
     pub password_hash: String,
-    pub failed_login_attempts: u32,
+    pub failed_login_attempts: i32,
     pub last_login: Option<DateTime<Utc>>,
     pub is_locked: bool,
     pub created_at: DateTime<Utc>,
