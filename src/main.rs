@@ -1,10 +1,12 @@
-use actix_web::{web, App, HttpServer, HttpResponse, Responder};
+use actix_web::{web, App, HttpServer, HttpResponse, dev::ServiceRequest};
 use actix_session::{Session, SessionMiddleware, storage::RedisSessionStore};
 use actix_identity::{IdentityService, CookieIdentityPolicy};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::rc::Rc;
+use std::time::Duration;
+use actix_web::cookie::Key;
 
 mod config;
 mod error;
@@ -98,33 +100,42 @@ async fn get_csrf_token(
     }))
 }
 
+pub async fn index(
+    _csrf_store: web::Data<Rc<CsrfStore>>,
+    _session: Session,
+) -> HttpResponse {
+    HttpResponse::Ok().body("Hello world!")
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Load configuration
+    // Initialize configuration
     let config = SecurityConfig::default();
+    let session_manager = web::Data::new(SessionManager::new(config.clone()));
 
     // Initialize Redis session store
-    let redis_store = RedisSessionStore::new(config.redis_url.clone())
+    let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
+        .await
         .expect("Failed to create Redis session store");
 
-    // Initialize stores
-    let login_store = Arc::new(LoginAttemptStore::new(config.clone()));
-    let session_manager = Arc::new(SessionManager::new(config.clone()));
-    let csrf_store = Rc::new(CsrfStore::new());
+    // Generate a random secret key
+    let secret_key = Key::generate();
+
+    // Create CSRF store
+    let csrf_store = web::Data::new(Rc::new(CsrfStore::new()));
 
     HttpServer::new(move || {
         App::new()
             .wrap(
-                SessionMiddleware::builder(redis_store.clone())
-                    .cookie_secure(config.cookie_secure)
-                    .cookie_http_only(config.cookie_http_only)
-                    .cookie_same_site(config.cookie_same_site.parse().unwrap())
-                    .build()
+                SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
+                    .cookie_secure(true)
+                    .cookie_http_only(true)
+                    .session_ttl(Duration::from_secs(3600))
+                    .build(),
             )
-            .wrap(CsrfProtection)
-            .app_data(web::Data::new(login_store.clone()))
-            .app_data(web::Data::new(session_manager.clone()))
-            .app_data(web::Data::new(csrf_store.clone()))
+            .app_data(session_manager.clone())
+            .app_data(csrf_store.clone())
+            .route("/", web::get().to(index))
             .route("/login", web::post().to(login))
             .route("/logout", web::post().to(logout))
             .route("/protected", web::get().to(protected_resource))
