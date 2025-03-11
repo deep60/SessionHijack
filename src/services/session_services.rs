@@ -79,8 +79,7 @@ impl SessionService {
     }
 
     pub async fn destroy_session(&self, session: &Session) -> Result<(), Error> {
-        session.purge()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        session.purge();
         Ok(())
     }
 

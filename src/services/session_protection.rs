@@ -211,8 +211,7 @@ impl SessionManager {
     }
 
     pub async fn destroy_session(&self, session: &ActixSession) -> Result<(), Error> {
-        session.purge()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        session.purge();
         Ok(())
     }
 }
