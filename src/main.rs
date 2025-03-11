@@ -1,4 +1,4 @@
-use actix_web::{web, App, HttpServer, HttpResponse, dev::ServiceRequest};
+use actix_web::{web, App, HttpServer, HttpResponse, dev::ServiceRequest, Responder};
 use actix_session::{Session, SessionMiddleware, storage::RedisSessionStore};
 use actix_identity::{IdentityService, CookieIdentityPolicy};
 use serde::{Deserialize, Serialize};
@@ -79,7 +79,7 @@ async fn protected_resource(
     req: actix_web::HttpRequest,
 ) -> impl Responder {
     // Validate session
-    if let Err(e) = session_manager.validate_session(ServiceRequest::from(req), &session).await {
+    if let Err(e) = session_manager.validate_session(ServiceRequest::from_parts(req, web::Payload::None), &session).await {
         return HttpResponse::Unauthorized().json(serde_json::json!({
             "error": e.to_string()
         }));
@@ -111,7 +111,11 @@ pub async fn index(
 async fn main() -> std::io::Result<()> {
     // Initialize configuration
     let config = SecurityConfig::default();
-    let session_manager = web::Data::new(SessionManager::new(config.clone()));
+    
+    // Initialize stores
+    let login_store = web::Data::new(Arc::new(LoginAttemptStore::new(config.clone())));
+    let session_manager = web::Data::new(Arc::new(SessionManager::new(config.clone())));
+    let csrf_store = web::Data::new(Rc::new(CsrfStore::new()));
 
     // Initialize Redis session store
     let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
@@ -120,9 +124,6 @@ async fn main() -> std::io::Result<()> {
 
     // Generate a random secret key
     let secret_key = Key::generate();
-
-    // Create CSRF store
-    let csrf_store = web::Data::new(Rc::new(CsrfStore::new()));
 
     HttpServer::new(move || {
         App::new()
@@ -133,6 +134,8 @@ async fn main() -> std::io::Result<()> {
                     .session_ttl(Duration::from_secs(3600))
                     .build(),
             )
+            .wrap(CsrfProtection)
+            .app_data(login_store.clone())
             .app_data(session_manager.clone())
             .app_data(csrf_store.clone())
             .route("/", web::get().to(index))
